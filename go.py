@@ -128,6 +128,8 @@ def _b64_script(script_text):
 # We install the toolkit, then restart ComfyUI on 18188 (portal on 8188 proxies to it).
 COMFYUI_SETUP_SCRIPT = """#!/bin/bash
 set -e
+# Activate the comfy image's venv (has torch, sqlalchemy, etc.)
+source /venv/main/bin/activate
 # Wait for ComfyUI to boot from image entrypoint
 sleep 15
 # Find the ComfyUI custom_nodes directory
@@ -160,6 +162,8 @@ echo "ComfyUI restarted on 18188"
 # Klein setup: just install toolkit into pre-built ComfyUI image (no Ollama needed)
 KLEIN_SETUP_SCRIPT = """#!/bin/bash
 set -e
+# Activate the comfy image's venv (has torch, sqlalchemy, etc.)
+source /venv/main/bin/activate
 sleep 15
 COMFY_DIR=$(find /opt /workspace /root -name "custom_nodes" -path "*/ComfyUI/*" 2>/dev/null | head -1)
 if [ -z "$COMFY_DIR" ]; then
