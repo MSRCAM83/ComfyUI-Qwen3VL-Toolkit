@@ -126,15 +126,16 @@ def _b64_script(script_text):
 COMFYUI_SETUP_SCRIPT = """#!/bin/bash
 set -e
 mkdir -p /workspace
-apt-get update && apt-get install -y git python3 python3-pip python3-venv wget curl ffmpeg libgl1-mesa-glx >/dev/null 2>&1
+apt-get update && apt-get install -y git python3 python3-pip python3-venv wget curl ffmpeg libgl1-mesa-glx zstd >/dev/null 2>&1
 cd /workspace
-git clone https://github.com/comfyanonymous/ComfyUI.git 2>/dev/null || true
+if [ ! -d ComfyUI ]; then git clone https://github.com/comfyanonymous/ComfyUI.git; fi
 cd /workspace/ComfyUI
 pip install -r requirements.txt 2>&1
 mkdir -p custom_nodes
 cd custom_nodes
-git clone https://github.com/msrcam/ComfyUI-Qwen3VL-Toolkit.git 2>/dev/null || true
-cd ComfyUI-Qwen3VL-Toolkit && pip install -r requirements.txt 2>&1
+if [ ! -d ComfyUI-Qwen3VL-Toolkit ]; then git clone https://github.com/MSRCAM83/ComfyUI-Qwen3VL-Toolkit.git; fi
+cd ComfyUI-Qwen3VL-Toolkit
+pip install -r requirements.txt 2>&1
 curl -fsSL https://ollama.com/install.sh | sh
 OLLAMA_NUM_PARALLEL=4 OLLAMA_HOST=0.0.0.0:11434 nohup ollama serve > /tmp/ollama.log 2>&1 &
 sleep 5
