@@ -1,0 +1,6 @@
+requests
+imagehash
+opencv-python-headless
+Pillow
+numpy
+torch

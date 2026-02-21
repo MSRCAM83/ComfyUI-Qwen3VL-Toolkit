@@ -1,0 +1,245 @@
+{
+  "1": {
+    "class_type": "QVL_FolderPreview",
+    "inputs": {
+      "folder_path": "/workspace/scored_keep",
+      "page": 1,
+      "per_page": 16,
+      "sort_by": "random",
+      "max_preview_size": 512
+    },
+    "_meta": { "title": "1. Browse Scored Frames" }
+  },
+  "2": {
+    "class_type": "PreviewImage",
+    "inputs": {
+      "images": ["1", 0]
+    },
+    "_meta": { "title": "Preview: Scored Frames" }
+  },
+  "3": {
+    "class_type": "QVL_LoadImages",
+    "inputs": {
+      "folder_path": "/workspace/scored_keep",
+      "min_size": 256,
+      "max_images": 50,
+      "sort_by": "name"
+    },
+    "_meta": { "title": "2. Load Scored Frames (batch)" }
+  },
+
+  "10": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "bigLove_klein1_fp8.safetensors",
+      "weight_dtype": "default"
+    },
+    "_meta": { "title": "Klein: Load UNET" }
+  },
+  "11": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen3_8b_abliterated_v2-fp8mixed.safetensors",
+      "type": "flux2",
+      "device": "default"
+    },
+    "_meta": { "title": "Klein: Load CLIP" }
+  },
+  "12": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "flux2-vae.safetensors"
+    },
+    "_meta": { "title": "Klein: Load VAE" }
+  },
+  "13": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "keep everything exactly the same, remove man from image, masterpiece, 8k resolution, clean image compression, sharpen, upscale, denoise, perfect",
+      "clip": ["11", 0]
+    },
+    "_meta": { "title": "Klein: Positive Prompt" }
+  },
+  "14": {
+    "class_type": "ConditioningZeroOut",
+    "inputs": {
+      "conditioning": ["13", 0]
+    },
+    "_meta": { "title": "Klein: Negative (Zero)" }
+  },
+  "15": {
+    "class_type": "GetImageSize",
+    "inputs": {
+      "image": ["3", 0]
+    },
+    "_meta": { "title": "Klein: Get Image Size" }
+  },
+  "16": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+      "image": ["3", 0],
+      "upscale_method": "nearest-exact",
+      "megapixels": 1
+    },
+    "_meta": { "title": "Klein: Scale to 1MP" }
+  },
+  "17": {
+    "class_type": "VAEEncode",
+    "inputs": {
+      "pixels": ["16", 0],
+      "vae": ["12", 0]
+    },
+    "_meta": { "title": "Klein: VAE Encode Reference" }
+  },
+  "18": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+      "conditioning": ["13", 0],
+      "latent": ["17", 0]
+    },
+    "_meta": { "title": "Klein: Reference Positive" }
+  },
+  "19": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+      "conditioning": ["14", 0],
+      "latent": ["17", 0]
+    },
+    "_meta": { "title": "Klein: Reference Negative" }
+  },
+  "20": {
+    "class_type": "EmptyFlux2LatentImage",
+    "inputs": {
+      "width": ["15", 0],
+      "height": ["15", 1],
+      "batch_size": 1
+    },
+    "_meta": { "title": "Klein: Empty Latent" }
+  },
+  "21": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": 1040150484699959
+    },
+    "_meta": { "title": "Klein: Random Noise" }
+  },
+  "22": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "euler"
+    },
+    "_meta": { "title": "Klein: Euler Sampler" }
+  },
+  "23": {
+    "class_type": "Flux2Scheduler",
+    "inputs": {
+      "steps": 3,
+      "width": 1024,
+      "height": 1024
+    },
+    "_meta": { "title": "Klein: Scheduler (3 steps)" }
+  },
+  "24": {
+    "class_type": "CFGGuider",
+    "inputs": {
+      "model": ["10", 0],
+      "positive": ["18", 0],
+      "negative": ["19", 0],
+      "cfg": 1.2
+    },
+    "_meta": { "title": "Klein: CFG Guider" }
+  },
+  "25": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": ["21", 0],
+      "guider": ["24", 0],
+      "sampler": ["22", 0],
+      "sigmas": ["23", 0],
+      "latent_image": ["20", 0]
+    },
+    "_meta": { "title": "Klein: Sample" }
+  },
+  "26": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": ["25", 0],
+      "vae": ["12", 0]
+    },
+    "_meta": { "title": "Klein: VAE Decode" }
+  },
+  "27": {
+    "class_type": "PreviewImage",
+    "inputs": {
+      "images": ["26", 0]
+    },
+    "_meta": { "title": "Preview: Klein Edit Output" }
+  },
+
+  "30": {
+    "class_type": "QVL_Detect",
+    "inputs": {
+      "images": ["26", 0],
+      "model": "huihui_ai/qwen2.5-vl-abliterated:7b",
+      "ollama_url": "http://127.0.0.1:11434",
+      "prompt": "Return JSON with bbox [x1,y1,x2,y2] as percentages (0-100) of the main female subject. Include all visible body parts from head to toe. Be generous with the crop area.\n{\"bbox\": [x1, y1, x2, y2], \"confidence\": 0.0-1.0}",
+      "api_type": "ollama",
+      "img_size": 512
+    },
+    "_meta": { "title": "4. Detect Subject BBox" }
+  },
+  "31": {
+    "class_type": "QVL_SmartCrop",
+    "inputs": {
+      "images": ["26", 0],
+      "bbox_metadata": ["30", 1],
+      "padding_pct": 5,
+      "center_subject": true,
+      "fallback": "keep_original"
+    },
+    "_meta": { "title": "5. Smart Crop" }
+  },
+  "32": {
+    "class_type": "PreviewImage",
+    "inputs": {
+      "images": ["31", 0]
+    },
+    "_meta": { "title": "Preview: Smart Crop" }
+  },
+
+  "40": {
+    "class_type": "QVL_Caption",
+    "inputs": {
+      "images": ["31", 0],
+      "model": "huihui_ai/qwen2.5-vl-abliterated:32b",
+      "ollama_url": "http://127.0.0.1:11434",
+      "preset": "flux2",
+      "api_type": "ollama"
+    },
+    "_meta": { "title": "6. Caption (Flux2 preset, 32B)" }
+  },
+
+  "50": {
+    "class_type": "QVL_Resize",
+    "inputs": {
+      "images": ["31", 0],
+      "target_size": 1024,
+      "mode": "longest_side"
+    },
+    "_meta": { "title": "7. Resize to 1024" }
+  },
+
+  "60": {
+    "class_type": "QVL_SaveDataset",
+    "inputs": {
+      "images": ["50", 0],
+      "output_folder": "/workspace/dataset",
+      "format": "png",
+      "quality": 95,
+      "captions_json": ["40", 1],
+      "filenames": ["3", 1],
+      "prefix": ""
+    },
+    "_meta": { "title": "8. Save Dataset" }
+  }
+}
