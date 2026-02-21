@@ -146,6 +146,7 @@ cd /workspace/ComfyUI && python3 main.py --listen 0.0.0.0 --port 8188
 # VLM-only setup: just Ollama
 VLM_SETUP_SCRIPT_TEMPLATE = """#!/bin/bash
 set -e
+apt-get update && apt-get install -y zstd curl >/dev/null 2>&1
 curl -fsSL https://ollama.com/install.sh | sh
 export OLLAMA_NUM_PARALLEL=4
 export OLLAMA_HOST=0.0.0.0:11434
@@ -462,10 +463,19 @@ def wait_for_klein_ready(instance_ids, timeout=900, target_count=None):
         losers = [iid for iid in instance_ids if iid not in winners]
         return winners, losers
 
+    # Destroy any instances that never came online (prevent orphans)
+    unready = [iid for iid in instance_ids if iid not in urls]
+    if unready:
+        print(f"  Destroying {len(unready)} Klein instance(s) that didn't come online...")
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            for iid in unready:
+                executor.submit(destroy_instance, iid)
+                print(f"    Instance {iid}: timed out — DESTROYED")
+
     return urls
 
 
-def wait_for_vlm_ready(instance_ids, timeout=600, target_count=None):
+def wait_for_vlm_ready(instance_ids, timeout=900, target_count=None):
     """Wait for VLM instances to be ready.
 
     Args:
@@ -534,6 +544,15 @@ def wait_for_vlm_ready(instance_ids, timeout=600, target_count=None):
         winners = {iid: urls[iid] for iid, _ in ready_order[:target_count]}
         losers = [iid for iid in instance_ids if iid not in winners]
         return winners, losers
+
+    # Destroy any instances that never came online (prevent orphans)
+    unready = [iid for iid in instance_ids if iid not in urls]
+    if unready:
+        print(f"  Destroying {len(unready)} VLM instance(s) that didn't come online...")
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            for iid in unready:
+                executor.submit(destroy_instance, iid)
+                print(f"    Instance {iid}: timed out — DESTROYED")
 
     return urls
 
