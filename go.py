@@ -124,8 +124,8 @@ def _b64_script(script_text):
 
 
 # Main instance setup: install toolkit + Ollama into pre-built ComfyUI image.
-# The image's supervisor starts ComfyUI on 18188 AFTER onstart exits.
-# We install the toolkit quickly, then background the Ollama setup so we don't block.
+# CLI-created instances DON'T get the supervisor/portal — we must start ComfyUI ourselves.
+# ComfyUI runs on port 8188 (the exposed container port). Ollama installs in background.
 COMFYUI_SETUP_SCRIPT = """#!/bin/bash
 set -e
 # Activate the comfy image's venv (has torch, sqlalchemy, etc.)
@@ -143,9 +143,12 @@ if [ ! -d ComfyUI-Qwen3VL-Toolkit ]; then
 fi
 cd ComfyUI-Qwen3VL-Toolkit
 pip install -r requirements.txt 2>&1
-# Install Ollama entirely in background so we don't block ComfyUI startup.
-# The image's supervisor starts ComfyUI AFTER this onstart script exits.
-# CRITICAL: redirect subshell output to file so it doesn't hold the pipe open.
+# Start ComfyUI on port 8188 (the exposed container port)
+COMFY_MAIN=$(find /opt /workspace /root -name "main.py" -path "*/ComfyUI/*" 2>/dev/null | head -1)
+cd "$(dirname "$COMFY_MAIN")"
+nohup python3 main.py --listen 0.0.0.0 --port 8188 > /tmp/comfyui.log 2>&1 &
+echo "ComfyUI starting on port 8188"
+# Install Ollama in background (don't block — redirect output so pipe closes)
 (
     apt-get update && apt-get install -y zstd >/dev/null 2>&1
     curl -fsSL https://ollama.com/install.sh | sh
@@ -172,8 +175,11 @@ if [ ! -d ComfyUI-Qwen3VL-Toolkit ]; then
 fi
 cd ComfyUI-Qwen3VL-Toolkit
 pip install -r requirements.txt 2>&1
-# Don't restart ComfyUI — let the image's supervisor start it after this script exits.
-echo "Klein toolkit installed."
+# Start ComfyUI on port 8188 (the exposed container port)
+COMFY_MAIN=$(find /opt /workspace /root -name "main.py" -path "*/ComfyUI/*" 2>/dev/null | head -1)
+cd "$(dirname "$COMFY_MAIN")"
+nohup python3 main.py --listen 0.0.0.0 --port 8188 > /tmp/comfyui.log 2>&1 &
+echo "Klein ComfyUI starting on port 8188"
 """
 
 # VLM-only setup: just Ollama (uses base CUDA image, no ComfyUI)
