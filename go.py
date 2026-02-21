@@ -123,16 +123,14 @@ def _b64_script(script_text):
     return f"bash -c 'echo {encoded} | base64 -d | bash'"
 
 
-# Main instance setup: install toolkit + Ollama into pre-built ComfyUI image
-# ComfyUI is already running on port 18188 from image entrypoint.
-# We install the toolkit, then restart ComfyUI on 18188 (portal on 8188 proxies to it).
+# Main instance setup: install toolkit + Ollama into pre-built ComfyUI image.
+# The image's supervisor starts ComfyUI on 18188 AFTER onstart exits.
+# We install the toolkit quickly, then background the Ollama setup so we don't block.
 COMFYUI_SETUP_SCRIPT = """#!/bin/bash
 set -e
 # Activate the comfy image's venv (has torch, sqlalchemy, etc.)
 source /venv/main/bin/activate
-# Wait for ComfyUI to boot from image entrypoint
-sleep 15
-# Find the ComfyUI custom_nodes directory
+# Find the ComfyUI custom_nodes directory (already exists in comfy image)
 COMFY_DIR=$(find /opt /workspace /root -name "custom_nodes" -path "*/ComfyUI/*" 2>/dev/null | head -1)
 if [ -z "$COMFY_DIR" ]; then
     echo "ERROR: Could not find ComfyUI custom_nodes directory"
@@ -145,18 +143,16 @@ if [ ! -d ComfyUI-Qwen3VL-Toolkit ]; then
 fi
 cd ComfyUI-Qwen3VL-Toolkit
 pip install -r requirements.txt 2>&1
-# Install Ollama
-apt-get update && apt-get install -y zstd >/dev/null 2>&1
-curl -fsSL https://ollama.com/install.sh | sh
-OLLAMA_NUM_PARALLEL=4 OLLAMA_HOST=0.0.0.0:11434 nohup ollama serve > /tmp/ollama.log 2>&1 &
-sleep 5
-nohup ollama pull huihui_ai/qwen2.5-vl-abliterated:32b > /tmp/ollama_pull.log 2>&1 &
-# Restart ComfyUI on port 18188 (portal at 8188 proxies to it)
-pkill -f "python.*main.py" || true
-sleep 3
-COMFY_MAIN=$(find /opt /workspace /root -name "main.py" -path "*/ComfyUI/*" 2>/dev/null | head -1)
-cd "$(dirname "$COMFY_MAIN")" && nohup python3 main.py --listen 0.0.0.0 --port 18188 > /tmp/comfyui.log 2>&1 &
-echo "ComfyUI restarted on 18188"
+# Install Ollama entirely in background so we don't block ComfyUI startup.
+# The image's supervisor starts ComfyUI AFTER this onstart script exits.
+(
+    apt-get update && apt-get install -y zstd >/dev/null 2>&1
+    curl -fsSL https://ollama.com/install.sh | sh
+    OLLAMA_NUM_PARALLEL=4 OLLAMA_HOST=0.0.0.0:11434 nohup ollama serve > /tmp/ollama.log 2>&1 &
+    sleep 5
+    ollama pull huihui_ai/qwen2.5-vl-abliterated:32b > /tmp/ollama_pull.log 2>&1
+) &
+echo "Toolkit installed. Ollama installing in background."
 """
 
 # Klein setup: just install toolkit into pre-built ComfyUI image (no Ollama needed)
@@ -164,7 +160,6 @@ KLEIN_SETUP_SCRIPT = """#!/bin/bash
 set -e
 # Activate the comfy image's venv (has torch, sqlalchemy, etc.)
 source /venv/main/bin/activate
-sleep 15
 COMFY_DIR=$(find /opt /workspace /root -name "custom_nodes" -path "*/ComfyUI/*" 2>/dev/null | head -1)
 if [ -z "$COMFY_DIR" ]; then
     echo "ERROR: Could not find ComfyUI custom_nodes directory"
@@ -176,12 +171,8 @@ if [ ! -d ComfyUI-Qwen3VL-Toolkit ]; then
 fi
 cd ComfyUI-Qwen3VL-Toolkit
 pip install -r requirements.txt 2>&1
-# Restart ComfyUI on port 18188 (portal at 8188 proxies to it)
-pkill -f "python.*main.py" || true
-sleep 3
-COMFY_MAIN=$(find /opt /workspace /root -name "main.py" -path "*/ComfyUI/*" 2>/dev/null | head -1)
-cd "$(dirname "$COMFY_MAIN")" && nohup python3 main.py --listen 0.0.0.0 --port 18188 > /tmp/comfyui.log 2>&1 &
-echo "ComfyUI restarted on 18188"
+# Don't restart ComfyUI — let the image's supervisor start it after this script exits.
+echo "Klein toolkit installed."
 """
 
 # VLM-only setup: just Ollama (uses base CUDA image, no ComfyUI)
