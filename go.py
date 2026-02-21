@@ -99,7 +99,9 @@ signal.signal(signal.SIGTERM, _abort_handler)
 # Constants
 STATE_FILE = os.path.join(os.path.dirname(__file__), ".go_state.json")
 
-# Use a real, existing base image — NOT a custom one that hasn't been built
+# Pre-built ComfyUI image (ComfyUI already installed, boots in ~2 min)
+COMFY_IMAGE = "vastai/comfy:v0.13.0-cuda-12.9-py312"
+# Base CUDA image for VLM-only instances (no ComfyUI needed)
 BASE_IMAGE = "nvidia/cuda:12.1.0-runtime-ubuntu22.04"
 
 # Search criteria
@@ -117,33 +119,65 @@ VLM_MODELS = {
 
 def _b64_script(script_text):
     """Base64-encode a bash script for safe --onstart-cmd passing."""
-    import base64
     encoded = base64.b64encode(script_text.encode()).decode()
     return f"bash -c 'echo {encoded} | base64 -d | bash'"
 
 
-# Main/Klein setup: install ComfyUI + toolkit + Ollama
+# Main instance setup: install toolkit + Ollama into pre-built ComfyUI image
+# ComfyUI is already running from the image, just need to add custom nodes and restart
 COMFYUI_SETUP_SCRIPT = """#!/bin/bash
 set -e
-mkdir -p /workspace
-apt-get update && apt-get install -y git python3 python3-pip python3-venv wget curl ffmpeg libgl1-mesa-glx zstd >/dev/null 2>&1
-cd /workspace
-if [ ! -d ComfyUI ]; then git clone https://github.com/comfyanonymous/ComfyUI.git; fi
-cd /workspace/ComfyUI
-pip install -r requirements.txt 2>&1
-mkdir -p custom_nodes
-cd custom_nodes
-if [ ! -d ComfyUI-Qwen3VL-Toolkit ]; then git clone https://github.com/MSRCAM83/ComfyUI-Qwen3VL-Toolkit.git; fi
+# Wait for ComfyUI to create its directory structure
+sleep 10
+# Find the ComfyUI custom_nodes directory
+COMFY_DIR=$(find /opt /workspace /root -name "custom_nodes" -path "*/ComfyUI/*" 2>/dev/null | head -1)
+if [ -z "$COMFY_DIR" ]; then
+    echo "ERROR: Could not find ComfyUI custom_nodes directory"
+    exit 1
+fi
+echo "Found custom_nodes at: $COMFY_DIR"
+cd "$COMFY_DIR"
+if [ ! -d ComfyUI-Qwen3VL-Toolkit ]; then
+    git clone https://github.com/MSRCAM83/ComfyUI-Qwen3VL-Toolkit.git
+fi
 cd ComfyUI-Qwen3VL-Toolkit
 pip install -r requirements.txt 2>&1
+# Install Ollama
+apt-get update && apt-get install -y zstd >/dev/null 2>&1
 curl -fsSL https://ollama.com/install.sh | sh
 OLLAMA_NUM_PARALLEL=4 OLLAMA_HOST=0.0.0.0:11434 nohup ollama serve > /tmp/ollama.log 2>&1 &
 sleep 5
 nohup ollama pull huihui_ai/qwen2.5-vl-abliterated:32b > /tmp/ollama_pull.log 2>&1 &
-cd /workspace/ComfyUI && python3 main.py --listen 0.0.0.0 --port 8188
+# Restart ComfyUI to pick up new custom nodes
+pkill -f "python.*main.py" || true
+sleep 3
+COMFY_MAIN=$(find /opt /workspace /root -name "main.py" -path "*/ComfyUI/*" 2>/dev/null | head -1)
+cd "$(dirname "$COMFY_MAIN")" && python3 main.py --listen 0.0.0.0 --port 8188
 """
 
-# VLM-only setup: just Ollama
+# Klein setup: just install toolkit into pre-built ComfyUI image (no Ollama needed)
+KLEIN_SETUP_SCRIPT = """#!/bin/bash
+set -e
+sleep 10
+COMFY_DIR=$(find /opt /workspace /root -name "custom_nodes" -path "*/ComfyUI/*" 2>/dev/null | head -1)
+if [ -z "$COMFY_DIR" ]; then
+    echo "ERROR: Could not find ComfyUI custom_nodes directory"
+    exit 1
+fi
+cd "$COMFY_DIR"
+if [ ! -d ComfyUI-Qwen3VL-Toolkit ]; then
+    git clone https://github.com/MSRCAM83/ComfyUI-Qwen3VL-Toolkit.git
+fi
+cd ComfyUI-Qwen3VL-Toolkit
+pip install -r requirements.txt 2>&1
+# Restart ComfyUI to pick up new custom nodes
+pkill -f "python.*main.py" || true
+sleep 3
+COMFY_MAIN=$(find /opt /workspace /root -name "main.py" -path "*/ComfyUI/*" 2>/dev/null | head -1)
+cd "$(dirname "$COMFY_MAIN")" && python3 main.py --listen 0.0.0.0 --port 8188
+"""
+
+# VLM-only setup: just Ollama (uses base CUDA image, no ComfyUI)
 VLM_SETUP_SCRIPT_TEMPLATE = """#!/bin/bash
 set -e
 apt-get update && apt-get install -y zstd curl >/dev/null 2>&1
@@ -258,7 +292,7 @@ def launch_main_instance():
             print(f"  [{i+1}/{launch_count}] {gpu} at ${price:.2f}/hr — launching...")
             future = executor.submit(run_vast, [
                 "create", "instance", str(offer["id"]),
-                "--image", BASE_IMAGE,
+                "--image", COMFY_IMAGE,
                 "--disk", "60",
                 "--env", "-p 8188:8188 -p 11434:11434",
                 "--onstart-cmd", _b64_script(COMFYUI_SETUP_SCRIPT)
@@ -356,10 +390,10 @@ def launch_klein_instance(offer_id):
     """Launch a single Klein instance."""
     out, rc = run_vast([
         "create", "instance", str(offer_id),
-        "--image", BASE_IMAGE,
+        "--image", COMFY_IMAGE,
         "--disk", "40",
         "--env", "-p 8188:8188",
-        "--onstart-cmd", _b64_script(COMFYUI_SETUP_SCRIPT)
+        "--onstart-cmd", _b64_script(KLEIN_SETUP_SCRIPT)
     ])  # Klein only needs ComfyUI port (8188)
 
     if rc != 0:
