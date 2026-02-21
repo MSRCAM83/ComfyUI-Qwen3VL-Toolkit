@@ -124,11 +124,12 @@ def _b64_script(script_text):
 
 
 # Main instance setup: install toolkit + Ollama into pre-built ComfyUI image
-# ComfyUI is already running from the image, just need to add custom nodes and restart
+# ComfyUI is already running on port 18188 from image entrypoint.
+# We install the toolkit, then restart ComfyUI on 18188 (portal on 8188 proxies to it).
 COMFYUI_SETUP_SCRIPT = """#!/bin/bash
 set -e
-# Wait for ComfyUI to create its directory structure
-sleep 10
+# Wait for ComfyUI to boot from image entrypoint
+sleep 15
 # Find the ComfyUI custom_nodes directory
 COMFY_DIR=$(find /opt /workspace /root -name "custom_nodes" -path "*/ComfyUI/*" 2>/dev/null | head -1)
 if [ -z "$COMFY_DIR" ]; then
@@ -148,17 +149,18 @@ curl -fsSL https://ollama.com/install.sh | sh
 OLLAMA_NUM_PARALLEL=4 OLLAMA_HOST=0.0.0.0:11434 nohup ollama serve > /tmp/ollama.log 2>&1 &
 sleep 5
 nohup ollama pull huihui_ai/qwen2.5-vl-abliterated:32b > /tmp/ollama_pull.log 2>&1 &
-# Restart ComfyUI to pick up new custom nodes
+# Restart ComfyUI on port 18188 (portal at 8188 proxies to it)
 pkill -f "python.*main.py" || true
 sleep 3
 COMFY_MAIN=$(find /opt /workspace /root -name "main.py" -path "*/ComfyUI/*" 2>/dev/null | head -1)
-cd "$(dirname "$COMFY_MAIN")" && python3 main.py --listen 0.0.0.0 --port 8188
+cd "$(dirname "$COMFY_MAIN")" && nohup python3 main.py --listen 0.0.0.0 --port 18188 > /tmp/comfyui.log 2>&1 &
+echo "ComfyUI restarted on 18188"
 """
 
 # Klein setup: just install toolkit into pre-built ComfyUI image (no Ollama needed)
 KLEIN_SETUP_SCRIPT = """#!/bin/bash
 set -e
-sleep 10
+sleep 15
 COMFY_DIR=$(find /opt /workspace /root -name "custom_nodes" -path "*/ComfyUI/*" 2>/dev/null | head -1)
 if [ -z "$COMFY_DIR" ]; then
     echo "ERROR: Could not find ComfyUI custom_nodes directory"
@@ -170,11 +172,12 @@ if [ ! -d ComfyUI-Qwen3VL-Toolkit ]; then
 fi
 cd ComfyUI-Qwen3VL-Toolkit
 pip install -r requirements.txt 2>&1
-# Restart ComfyUI to pick up new custom nodes
+# Restart ComfyUI on port 18188 (portal at 8188 proxies to it)
 pkill -f "python.*main.py" || true
 sleep 3
 COMFY_MAIN=$(find /opt /workspace /root -name "main.py" -path "*/ComfyUI/*" 2>/dev/null | head -1)
-cd "$(dirname "$COMFY_MAIN")" && python3 main.py --listen 0.0.0.0 --port 8188
+cd "$(dirname "$COMFY_MAIN")" && nohup python3 main.py --listen 0.0.0.0 --port 18188 > /tmp/comfyui.log 2>&1 &
+echo "ComfyUI restarted on 18188"
 """
 
 # VLM-only setup: just Ollama (uses base CUDA image, no ComfyUI)

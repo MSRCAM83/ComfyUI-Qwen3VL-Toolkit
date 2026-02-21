@@ -3,4 +3,3 @@ imagehash
 opencv-python-headless
 Pillow
 numpy
-torch
