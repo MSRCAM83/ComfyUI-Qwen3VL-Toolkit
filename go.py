@@ -145,13 +145,14 @@ cd ComfyUI-Qwen3VL-Toolkit
 pip install -r requirements.txt 2>&1
 # Install Ollama entirely in background so we don't block ComfyUI startup.
 # The image's supervisor starts ComfyUI AFTER this onstart script exits.
+# CRITICAL: redirect subshell output to file so it doesn't hold the pipe open.
 (
     apt-get update && apt-get install -y zstd >/dev/null 2>&1
     curl -fsSL https://ollama.com/install.sh | sh
     OLLAMA_NUM_PARALLEL=4 OLLAMA_HOST=0.0.0.0:11434 nohup ollama serve > /tmp/ollama.log 2>&1 &
     sleep 5
     ollama pull huihui_ai/qwen2.5-vl-abliterated:32b > /tmp/ollama_pull.log 2>&1
-) &
+) > /tmp/ollama_setup.log 2>&1 &
 echo "Toolkit installed. Ollama installing in background."
 """
 
